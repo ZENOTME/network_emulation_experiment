@@ -1,0 +1,15 @@
+[package]
+name = "out_order_recorder"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+rust-ini = "0.21.0"
+clap = { version =  "4.5.4", features = ["derive"]}
+async_xdp = { git = "https://github.com/ZENOTME/async_xdp",branch = "xdp_prog" }
+tokio = { version = "1", features = ["full"] }
+packet = "0.1.4"
+hwaddr = "0.1.7"
+once_cell = "1.19.0"
