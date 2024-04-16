@@ -65,6 +65,7 @@ async fn veth_to_eth(
             .build()
             .unwrap();
         total_bytes += pkt.len();
+        println!("Send pkt size: {:?}", pkt.len());
         eth_send_handle.send(pkt).unwrap();
     }
     Ok(total_bytes)
@@ -80,6 +81,7 @@ async fn eth_to_veth(
         let data = frame.data_ref();
         let pkt = Packet::new(data.as_ref()).unwrap();
         let ori_pkt = pkt.payload().to_vec();
+        println!("Receive pkt size: {:?}", ori_pkt.len());
         total_bytes += ori_pkt.len();
         veth_send_handle.send(ori_pkt).unwrap();
     }
@@ -95,7 +97,7 @@ async fn main() {
 
     let veth_context = create_cxt("veth1", 0, false);
 
-    regsiter_xdp_program("af_xdp_kern.o", "", "ens2f1").unwrap();
+    regsiter_xdp_program("../af_xdp_kern.o", "", "ens2f1").unwrap();
     let eth_conext = create_cxt("ens2f1", 0, true);
 
     let mut veth_receive_handle = veth_context.receive_handle().unwrap();

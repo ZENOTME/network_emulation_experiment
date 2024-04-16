@@ -29,7 +29,7 @@ struct Args {
     count: u32,
 
     #[arg(short, long, default_value_t = 16)]
-    pkt_size: u8,
+    pkt_size: u32,
 }
 
 fn create_cxt(if_name: &str, queue: u32, custom_xdp_prog: bool) -> XdpContext {
@@ -66,7 +66,7 @@ fn create_cxt(if_name: &str, queue: u32, custom_xdp_prog: bool) -> XdpContext {
 
 static PKT_RECORD: Lazy<Mutex<Vec<usize>>> = Lazy::new(|| Mutex::new(Vec::new()));
 
-async fn server(_count: u32, _pkt_size: u8) {
+async fn server(_count: u32, _pkt_size: u32) {
     ctrlc::set_handler(|| {
         println!("Receive record len: {}", PKT_RECORD.lock().unwrap().len());
         println!(
@@ -90,13 +90,14 @@ async fn server(_count: u32, _pkt_size: u8) {
         for frame in frames {
             let data = frame.data_ref();
             let pkt = Packet::new(data).unwrap();
-            let id = u32::from_be_bytes(pkt.payload().to_vec()[0..8].try_into().unwrap());
+            println!("Receive pkt: {:?}", pkt);
+            let id = u32::from_be_bytes(pkt.payload().to_vec()[0..4].try_into().unwrap());
             PKT_RECORD.lock().unwrap().push(id as usize);
         }
     }
 }
 
-async fn client(count: u32, pkt_size: u8, conf: ini::Ini) {
+async fn client(count: u32, pkt_size: u32, conf: ini::Ini) {
     let section = conf.section(Some("pingpong")).unwrap();
     let self_mac = section.get("self_mac").unwrap();
     let dst_mac = section.get("dst_mac").unwrap();
@@ -105,7 +106,7 @@ async fn client(count: u32, pkt_size: u8, conf: ini::Ini) {
     let send_handle = context.send_handle();
     for i in 0..count {
         let mut payload = vec![0u8; pkt_size as usize];
-        payload.copy_from_slice(&i.to_be_bytes());
+        payload[0..4].copy_from_slice(&i.to_be_bytes());
         let pkt = ether::Builder::default()
             .source(self_mac.parse::<HwAddr>().unwrap())
             .unwrap()
