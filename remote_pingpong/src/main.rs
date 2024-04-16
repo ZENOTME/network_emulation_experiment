@@ -10,7 +10,7 @@ use packet::{
 };
 use std::{convert::TryInto, str};
 
-const SELF_ADDR: &str = "9c:69:b4:61:9b:8d";
+const SELF_ADDR: &str = "9c:69:b4:61:c0:b1";
 const DST_ADDR: &str = "9c:69:b4:61:9b:8d";
 
 fn create_cxt(if_name: &str, queue: u32, custom_xdp_prog: bool) -> XdpContext {
@@ -89,7 +89,7 @@ async fn eth_to_veth(
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 2)]
 async fn main() {
-    let veth_context = create_cxt("veth0", 0, false);
+    let veth_context = create_cxt("veth1", 0, false);
 
     regsiter_xdp_program("af_xdp_kern.o", "", "ens2f1").unwrap();
     let eth_conext = create_cxt("ens2f1", 0, true);
@@ -110,8 +110,8 @@ async fn main() {
             let elaspe = now.duration_since(last_time).as_secs();
             if elaspe >= 1 {
                 println!(
-                    "send total_speed: {} mbytes/s",
-                    (total_bytes as u64) / elaspe / 1024 / 1024
+                    "send total_speed: {} bytes/s",
+                    (total_bytes as u64) / elaspe 
                 );
                 total_bytes = 0;
                 last_time = now;
@@ -130,8 +130,8 @@ async fn main() {
             let elaspe = now.duration_since(last_time).as_secs();
             if elaspe >= 1 {
                 println!(
-                    "send total_speed: {} mbytes/s",
-                    (total_bytes as u64) / elaspe / 1024 / 1024
+                    "receive total_speed: {} bytes/s",
+                    (total_bytes as u64) / elaspe 
                 );
                 total_bytes = 0;
                 last_time = now;
