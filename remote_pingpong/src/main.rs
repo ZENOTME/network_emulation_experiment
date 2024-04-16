@@ -48,7 +48,8 @@ fn create_cxt(if_name: &str, queue: u32, custom_xdp_prog: bool) -> XdpContext {
 async fn veth_to_eth(
     veth_recev_handle: &mut XdpReceiveHandle,
     eth_send_handle: &XdpSendHandle,
-) -> Result<(), String> {
+) -> Result<usize, String> {
+    let mut total_bytes = 0;
     let frames = veth_recev_handle.receive().await.unwrap();
     for frame in frames {
         let data = frame.data_ref();
@@ -64,26 +65,29 @@ async fn veth_to_eth(
             .unwrap()
             .build()
             .unwrap();
+        total_bytes += pkt.len();
         eth_send_handle.send(pkt).unwrap();
     }
-    Ok(())
+    Ok(total_bytes)
 }
 
 async fn eth_to_veth(
     eth_recev_handle: &mut XdpReceiveHandle,
     veth_send_handle: &XdpSendHandle,
-) -> Result<(), String> {
+) -> Result<usize, String> {
+    let mut total_bytes = 0;
     let frames = eth_recev_handle.receive().await.unwrap();
     for frame in frames {
         let data = frame.data_ref();
         let pkt = Packet::new(data.as_ref()).unwrap();
         let ori_pkt = pkt.payload().to_vec();
+        total_bytes += ori_pkt.len();
         veth_send_handle.send(ori_pkt).unwrap();
     }
-    Ok(())
+    Ok(total_bytes)
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "multi_thread", worker_threads = 2)]
 async fn main() {
     let veth_context = create_cxt("veth0", 0, false);
 
@@ -95,15 +99,46 @@ async fn main() {
     let mut eth_receive_handle = eth_conext.receive_handle().unwrap();
     let eth_send_handle = eth_conext.send_handle();
 
-    tokio::spawn(async move {
+    let join1 = tokio::spawn(async move {
+        let mut total_bytes = 0;
+        let mut last_time = std::time::Instant::now();
         loop {
-            veth_to_eth(&mut veth_receive_handle, &eth_send_handle).await.unwrap();
+            total_bytes += veth_to_eth(&mut veth_receive_handle, &eth_send_handle)
+                .await
+                .unwrap();
+            let now = std::time::Instant::now();
+            let elaspe = now.duration_since(last_time).as_secs();
+            if elaspe >= 1 {
+                println!(
+                    "send total_speed: {} mbytes/s",
+                    (total_bytes as u64) / elaspe / 1024 / 1024
+                );
+                total_bytes = 0;
+                last_time = now;
+            }
         }
     });
 
-    tokio::spawn(async move {
+    let join2 = tokio::spawn(async move {
+        let mut total_bytes = 0;
+        let mut last_time = std::time::Instant::now();
         loop {
-            eth_to_veth(&mut eth_receive_handle, &veth_send_handle).await.unwrap();
+            total_bytes += eth_to_veth(&mut eth_receive_handle, &veth_send_handle)
+                .await
+                .unwrap();
+            let now = std::time::Instant::now();
+            let elaspe = now.duration_since(last_time).as_secs();
+            if elaspe >= 1 {
+                println!(
+                    "send total_speed: {} mbytes/s",
+                    (total_bytes as u64) / elaspe / 1024 / 1024
+                );
+                total_bytes = 0;
+                last_time = now;
+            }
         }
     });
+
+    join1.await.unwrap();
+    join2.await.unwrap();
 }
