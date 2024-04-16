@@ -1,7 +1,9 @@
-use std::{panic, process::exit, sync::Mutex, vec};
+use std::{process::exit, sync::Mutex, vec};
 
 use async_xdp::{
-    config::{LibxdpFlags, SocketConfig, UmemConfig}, regsiter_xdp_program, FrameManager, SingleThreadRunner, SlabManager, SlabManagerConfig, Umem, XdpContext, XdpContextBuilder
+    config::{LibxdpFlags, SocketConfig, UmemConfig},
+    regsiter_xdp_program, FrameManager, SingleThreadRunner, SlabManager, SlabManagerConfig, Umem,
+    XdpContext, XdpContextBuilder,
 };
 use clap::Parser;
 use hwaddr::HwAddr;
@@ -64,8 +66,8 @@ fn create_cxt(if_name: &str, queue: u32, custom_xdp_prog: bool) -> XdpContext {
 
 static PKT_RECORD: Lazy<Mutex<Vec<usize>>> = Lazy::new(|| Mutex::new(Vec::new()));
 
-async fn server(_count: u32, pkt_size: u8) {
-    panic::set_hook(Box::new(|_panic_info| {
+async fn server(_count: u32, _pkt_size: u8) {
+    ctrlc::set_handler(|| {
         println!("Receive record len: {}", PKT_RECORD.lock().unwrap().len());
         println!(
             "Receive record: {:?}",
@@ -77,8 +79,10 @@ async fn server(_count: u32, pkt_size: u8) {
                 .collect::<Vec<_>>()
         );
         exit(0);
-    }));
+    })
+    .unwrap();
 
+    println!("Server start..");
     let context = create_cxt("ens2f1", 0, true);
     let mut recv_handle = context.receive_handle().unwrap();
     loop {
@@ -86,8 +90,7 @@ async fn server(_count: u32, pkt_size: u8) {
         for frame in frames {
             let data = frame.data_ref();
             let pkt = Packet::new(data).unwrap();
-            assert!(pkt.payload().len() == pkt_size as usize);
-            let id = pkt.payload()[0];
+            let id = u32::from_be_bytes(pkt.payload().to_vec()[0..8].try_into().unwrap());
             PKT_RECORD.lock().unwrap().push(id as usize);
         }
     }
@@ -101,6 +104,8 @@ async fn client(count: u32, pkt_size: u8, conf: ini::Ini) {
     let context = create_cxt("ens2f1", 0, true);
     let send_handle = context.send_handle();
     for i in 0..count {
+        let mut payload = vec![0u8; pkt_size as usize];
+        payload.copy_from_slice(&i.to_be_bytes());
         let pkt = ether::Builder::default()
             .source(self_mac.parse::<HwAddr>().unwrap())
             .unwrap()
@@ -108,12 +113,16 @@ async fn client(count: u32, pkt_size: u8, conf: ini::Ini) {
             .unwrap()
             .protocol(Protocol::Unknown(5401))
             .unwrap()
-            .payload(&vec![i as u8; pkt_size as usize])
+            .payload(payload.as_slice())
             .unwrap()
             .build()
             .unwrap();
         send_handle.send(pkt).unwrap();
     }
+
+    println!("Client send {} packets", count);
+    // block for send at bg
+    loop {}
 }
 
 #[tokio::main]

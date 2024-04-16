@@ -10,9 +10,6 @@ use packet::{
 };
 use std::{convert::TryInto, str};
 
-const SELF_ADDR: &str = "9c:69:b4:61:c0:b1";
-const DST_ADDR: &str = "9c:69:b4:61:9b:8d";
-
 fn create_cxt(if_name: &str, queue: u32, custom_xdp_prog: bool) -> XdpContext {
     let umem_config = UmemConfig::builder()
         .fill_queue_size((4096).try_into().unwrap())
@@ -48,6 +45,8 @@ fn create_cxt(if_name: &str, queue: u32, custom_xdp_prog: bool) -> XdpContext {
 async fn veth_to_eth(
     veth_recev_handle: &mut XdpReceiveHandle,
     eth_send_handle: &XdpSendHandle,
+    self_addr: &str,
+    dst_addr: &str,
 ) -> Result<usize, String> {
     let mut total_bytes = 0;
     let frames = veth_recev_handle.receive().await.unwrap();
@@ -55,9 +54,9 @@ async fn veth_to_eth(
         let data = frame.data_ref();
         let origin_pkt = data.as_ref();
         let pkt = ether::Builder::default()
-            .source(SELF_ADDR.parse::<HwAddr>().unwrap())
+            .source(self_addr.parse::<HwAddr>().unwrap())
             .unwrap()
-            .destination(DST_ADDR.parse::<HwAddr>().unwrap())
+            .destination(dst_addr.parse::<HwAddr>().unwrap())
             .unwrap()
             .protocol(Protocol::Unknown(5401))
             .unwrap()
@@ -89,6 +88,11 @@ async fn eth_to_veth(
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 2)]
 async fn main() {
+    let conf = ini::Ini::load_from_file("../config.ini").unwrap();
+    let section = conf.section(Some("pingpong")).unwrap();
+    let self_mac = section.get("self_mac").unwrap().to_string();
+    let dst_mac = section.get("dst_mac").unwrap().to_string();
+
     let veth_context = create_cxt("veth1", 0, false);
 
     regsiter_xdp_program("af_xdp_kern.o", "", "ens2f1").unwrap();
@@ -103,15 +107,20 @@ async fn main() {
         let mut total_bytes = 0;
         let mut last_time = std::time::Instant::now();
         loop {
-            total_bytes += veth_to_eth(&mut veth_receive_handle, &eth_send_handle)
-                .await
-                .unwrap();
+            total_bytes += veth_to_eth(
+                &mut veth_receive_handle,
+                &eth_send_handle,
+                &self_mac,
+                &dst_mac,
+            )
+            .await
+            .unwrap();
             let now = std::time::Instant::now();
             let elaspe = now.duration_since(last_time).as_secs();
             if elaspe >= 1 {
                 println!(
                     "send total_speed: {} bytes/s",
-                    (total_bytes as u64) / elaspe 
+                    (total_bytes as u64) / elaspe
                 );
                 total_bytes = 0;
                 last_time = now;
@@ -131,7 +140,7 @@ async fn main() {
             if elaspe >= 1 {
                 println!(
                     "receive total_speed: {} bytes/s",
-                    (total_bytes as u64) / elaspe 
+                    (total_bytes as u64) / elaspe
                 );
                 total_bytes = 0;
                 last_time = now;

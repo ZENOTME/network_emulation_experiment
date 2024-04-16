@@ -10,3 +10,4 @@ async_xdp = { git = "https://github.com/ZENOTME/async_xdp",branch = "xdp_prog" }
 tokio = { version = "1", features = ["full"] }
 packet = "0.1.4"
 hwaddr = "0.1.7"
+rust-ini = "0.21.0"
