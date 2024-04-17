@@ -1,7 +1,7 @@
 use async_xdp::{
     config::{LibxdpFlags, SocketConfig, UmemConfig},
-    regsiter_xdp_program, FrameManager, SingleThreadRunner, SlabManager, SlabManagerConfig, Umem,
-    XdpContext, XdpContextBuilder, XdpReceiveHandle, XdpSendHandle,
+    regsiter_xdp_program, FrameManager, PollerRunner, SingleThreadRunner, SlabManager,
+    SlabManagerConfig, Umem, XdpContext, XdpContextBuilder, XdpReceiveHandle, XdpSendHandle,
 };
 use hwaddr::HwAddr;
 use packet::{
@@ -10,7 +10,12 @@ use packet::{
 };
 use std::{convert::TryInto, str};
 
-fn create_cxt(if_name: &str, queue: u32, custom_xdp_prog: bool) -> XdpContext {
+fn create_cxt(
+    if_name: &str,
+    queue: u32,
+    custom_xdp_prog: bool,
+    runner: &impl PollerRunner,
+) -> XdpContext {
     let umem_config = UmemConfig::builder()
         .fill_queue_size((4096).try_into().unwrap())
         .comp_queue_size((4096).try_into().unwrap())
@@ -33,20 +38,18 @@ fn create_cxt(if_name: &str, queue: u32, custom_xdp_prog: bool) -> XdpContext {
     let manager_config = SlabManagerConfig::new(4096);
     let frame_manager = SlabManager::new(manager_config, frames).unwrap();
 
-    let runner = SingleThreadRunner::new();
-
     let mut dev1_context_builder = XdpContextBuilder::new(if_name, queue);
     dev1_context_builder
         .with_socket_config(socket_config)
         .with_exist_umem(umem.clone(), frame_manager.clone());
-    dev1_context_builder.build(&runner).unwrap()
+    dev1_context_builder.build(runner).unwrap()
 }
 
 async fn veth_to_eth(
     veth_recev_handle: &mut XdpReceiveHandle,
     eth_send_handle: &XdpSendHandle,
-    self_addr: &str,
-    dst_addr: &str,
+    self_addr: HwAddr,
+    dst_addr: HwAddr,
 ) -> Result<usize, String> {
     let mut total_bytes = 0;
     let frames = veth_recev_handle.receive().await.unwrap();
@@ -54,9 +57,9 @@ async fn veth_to_eth(
         let data = frame.data_ref();
         let origin_pkt = data.as_ref();
         let pkt = ether::Builder::default()
-            .source(self_addr.parse::<HwAddr>().unwrap())
+            .source(self_addr)
             .unwrap()
-            .destination(dst_addr.parse::<HwAddr>().unwrap())
+            .destination(dst_addr)
             .unwrap()
             .protocol(Protocol::Unknown(5401))
             .unwrap()
@@ -65,7 +68,6 @@ async fn veth_to_eth(
             .build()
             .unwrap();
         total_bytes += pkt.len();
-        println!("Send pkt size: {:?}", pkt.len());
         eth_send_handle.send(pkt).unwrap();
     }
     Ok(total_bytes)
@@ -81,7 +83,6 @@ async fn eth_to_veth(
         let data = frame.data_ref();
         let pkt = Packet::new(data.as_ref()).unwrap();
         let ori_pkt = pkt.payload().to_vec();
-        println!("Receive pkt size: {:?}", ori_pkt.len());
         total_bytes += ori_pkt.len();
         veth_send_handle.send(ori_pkt).unwrap();
     }
@@ -90,15 +91,29 @@ async fn eth_to_veth(
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 2)]
 async fn main() {
+    env_logger::init();
+
     let conf = ini::Ini::load_from_file("../config.ini").unwrap();
     let section = conf.section(Some("pingpong")).unwrap();
-    let self_mac = section.get("self_mac").unwrap().to_string();
-    let dst_mac = section.get("dst_mac").unwrap().to_string();
+    let self_mac = section
+        .get("self_mac")
+        .unwrap()
+        .to_string()
+        .parse::<HwAddr>()
+        .unwrap();
+    let dst_mac = section
+        .get("dst_mac")
+        .unwrap()
+        .to_string()
+        .parse::<HwAddr>()
+        .unwrap();
 
-    let veth_context = create_cxt("veth1", 0, false);
+    let runner = SingleThreadRunner::new();
+
+    let veth_context = create_cxt("veth1", 0, false, &runner);
 
     regsiter_xdp_program("../af_xdp_kern.o", "", "ens2f1").unwrap();
-    let eth_conext = create_cxt("ens2f1", 0, true);
+    let eth_conext = create_cxt("ens2f1", 0, true, &runner);
 
     let mut veth_receive_handle = veth_context.receive_handle().unwrap();
     let veth_send_handle = veth_context.send_handle();
@@ -112,17 +127,17 @@ async fn main() {
             total_bytes += veth_to_eth(
                 &mut veth_receive_handle,
                 &eth_send_handle,
-                &self_mac,
-                &dst_mac,
+                self_mac,
+                dst_mac,
             )
             .await
             .unwrap();
             let now = std::time::Instant::now();
             let elaspe = now.duration_since(last_time).as_secs();
             if elaspe >= 1 {
-                println!(
-                    "send total_speed: {} bytes/s",
-                    (total_bytes as u64) / elaspe
+                log::trace!(
+                    "veth -> eth total_speed: {} mbytes/s",
+                    (total_bytes as u64) / elaspe / 1000 / 1000
                 );
                 total_bytes = 0;
                 last_time = now;
@@ -140,9 +155,9 @@ async fn main() {
             let now = std::time::Instant::now();
             let elaspe = now.duration_since(last_time).as_secs();
             if elaspe >= 1 {
-                println!(
-                    "receive total_speed: {} bytes/s",
-                    (total_bytes as u64) / elaspe
+                log::trace!(
+                    "eth -> veth total_speed: {} mbytes/s",
+                    (total_bytes as u64) / elaspe / 1000 / 1000
                 );
                 total_bytes = 0;
                 last_time = now;
