@@ -1,0 +1,15 @@
+[package]
+name = "netem_remote_simple"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+netem_rs = { git = "https://github.com/ZENOTME/netem_rs" , branch = "wip" }
+env_logger = "0.11.3"
+log = "0.4.14"
+packet = "0.1.4"
+anyhow = "1.0.40"
+smallvec = "1.6.1"
