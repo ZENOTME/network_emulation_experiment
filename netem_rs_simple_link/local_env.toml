@@ -1,0 +1,11 @@
+[node1]
+port_type="xdp"
+if_name="veth1"
+queue_id=0
+mac_addr="aa:00:00:00:00:00"
+
+[node2]
+port_type="xdp"
+if_name="veth2"
+queue_id=0
+mac_addr="aa:00:00:00:00:01"

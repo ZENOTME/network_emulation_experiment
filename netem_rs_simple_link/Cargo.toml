@@ -1,5 +1,5 @@
 [package]
-name = "netem_remote_simple"
+name = "netem_rs_simple_link"
 version = "0.1.0"
 edition = "2021"
 

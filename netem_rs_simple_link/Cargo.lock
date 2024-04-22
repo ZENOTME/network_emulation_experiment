@@ -847,19 +847,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "defc4c55412d89136f966bbb339008b474350e5e6e78d2714439c386b3137a03"
 
 [[package]]
-name = "netem_remote_simple"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "env_logger",
- "log",
- "netem_rs",
- "packet",
- "smallvec",
- "tokio",
-]
-
-[[package]]
 name = "netem_rs"
 version = "0.1.0"
 source = "git+https://github.com/ZENOTME/netem_rs?branch=wip#645d3d7c4681252daf3b2cd1f77ceba514ffea73"
@@ -883,6 +870,19 @@ dependencies = [
  "tonic",
  "tonic-build",
  "url",
+]
+
+[[package]]
+name = "netem_rs_simple_link"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "env_logger",
+ "log",
+ "netem_rs",
+ "packet",
+ "smallvec",
+ "tokio",
 ]
 
 [[package]]

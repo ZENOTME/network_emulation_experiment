@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use log::trace;
+use log::{error, trace};
 use netem_rs::{Actor, ActorContext, DataView, HostAddr, MetaClient, NodeInfo, RemtoeRuntime};
 use packet::ether::Packet;
 
@@ -52,18 +52,16 @@ impl Actor for ForwardActor {
                         })
                         .await?;
                 } else {
-                    trace!(
-                        "unicast dst: {:?} len: {}",
-                        packet.destination(),
-                        packet.as_ref().len()
-                    );
-                    self.context
+                    if let Some(handle) = self
+                        .context
                         .port_table
                         .get_send_handle(packet.destination())
                         .await
-                        .unwrap()
-                        .send_frame(smallvec::smallvec![frame])
-                        .unwrap();
+                    {
+                        handle.send_frame(smallvec::smallvec![frame])?;
+                    } else {
+                        error!("no send handle for {:?}", packet);
+                    }
                 }
             }
         }
@@ -96,8 +94,8 @@ impl MetaClient for MockMetaClient {
                             host: "10.0.0.44".to_string(),
                             port: 10000,
                         },
-                        eth_mac_addr: None,
-                        xdp_subnet_id: -1,
+                        eth_mac_addr: Some("9c:69:b4:61:c0:b1".parse().unwrap()),
+                        xdp_subnet_id: 1,
                     }],
                 ),
             ]),
